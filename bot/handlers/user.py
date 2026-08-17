@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, FSInputFile
@@ -118,3 +119,27 @@ async def web_app_data_handler(message: Message):
             await _send_content(message, item)
         else:
             await message.answer("Topilmadi 😕")
+
+
+# ---------- Hazilli stiker javoblari ----------
+# Admin panelidan qo'shilgan stikerlar shu yerda ishlatiladi (bitta umumiy to'plam,
+# butun bot bo'ylab bir xil). Foydalanuvchi botga oddiy (tushunarsiz) xabar yozganda
+# tasodifiy stiker + qisqa hazil bilan javob qaytaradi.
+
+FUNNY_LINES = [
+    "Thwip! 🕸 Buni tushunmadim, lekin baribir stiker olib qo'y 😄",
+    "Hmm, o'rgimchak hissim bunday buyruqni sezmayapti 🕷",
+    "Bosh menyuga qaytish uchun /start bos, hozircha mana stiker 🕸",
+    "New York osmonida uchib yuribman, xabaringni keyin o'qiyman 🕷😅",
+    "Peter hozir band, lekin stikerdan mahrum qilmayman!",
+]
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def playful_fallback(message: Message):
+    """Boshqa hech qanday handler ushlamagan oddiy matnli xabarlarga ishlaydi."""
+    sticker_id = await db.get_random_sticker()
+    if not sticker_id:
+        return  # admin hali stiker qo'shmagan bo'lsa, hech narsa qilmaymiz
+    await message.answer_sticker(sticker_id)
+    await message.answer(random.choice(FUNNY_LINES))

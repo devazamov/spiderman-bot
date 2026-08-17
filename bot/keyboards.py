@@ -64,6 +64,7 @@ def admin_menu_kb(is_super: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🗑 Kontent o'chirish", callback_data="admin_delete")],
         [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🖼 Menyu rasmlari", callback_data="admin_banners")],
+        [InlineKeyboardButton(text="🎭 Stikerlar", callback_data="admin_stickers")],
     ]
     if is_super:
         rows.append([InlineKeyboardButton(text="📣 Xabar yuborish (barchaga)", callback_data="admin_broadcast")])
@@ -80,6 +81,23 @@ BANNER_MENUS = [("main", "🏠 Asosiy menyu")] + [
 def banner_menu_kb() -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(text=title, callback_data=f"bannerkey:{key}")] for key, title in BANNER_MENUS]
     rows.append([InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def stickers_menu_kb(count: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📋 Ro'yxat ({count} ta)", callback_data="stickers_list")],
+        [InlineKeyboardButton(text="➕ Stiker qo'shish", callback_data="stickers_add")],
+        [InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin_back")],
+    ])
+
+
+def stickers_list_kb(stickers: list) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f"❌ #{s['id']}", callback_data=f"sticker_rm:{s['id']}")]
+        for s in stickers[:40]
+    ]
+    rows.append([InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin_stickers")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

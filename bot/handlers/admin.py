@@ -11,6 +11,7 @@ from bot.config import CATEGORIES
 from bot.keyboards import (
     admin_menu_kb, admin_category_kb, banner_menu_kb,
     admins_list_kb, role_choice_kb, channels_list_kb,
+    stickers_menu_kb, stickers_list_kb,
 )
 
 router = Router()
@@ -48,6 +49,10 @@ class Broadcast(StatesGroup):
 
 class SetBanner(StatesGroup):
     waiting_photo = State()
+
+
+class AddSticker(StatesGroup):
+    waiting_sticker = State()
 
 
 class AddAdminFSM(StatesGroup):
@@ -334,8 +339,8 @@ async def admin_banner_key_chosen(callback: CallbackQuery, state: FSMContext):
     await state.update_data(menu_key=menu_key)
     await state.set_state(SetBanner.waiting_photo)
     await callback.message.edit_text(
-        "Shu menyu tepasida ko'rinadigan rasmni yuboring.\n"
-        "(Mavjud rasmni o'chirish uchun \"o'chir\" deb yozing)"
+        "Shu menyu tepasida ko'rinadigan rasm YOKI videoni yuboring.\n"
+        "(Mavjudini o'chirish uchun \"o'chir\" deb yozing)"
     )
     await callback.answer()
 
@@ -349,17 +354,96 @@ async def admin_banner_photo_received(message: Message, state: FSMContext):
     if message.text and message.text.strip().lower() in ("o'chir", "ochir", "-"):
         await db.remove_banner(menu_key)
         await state.clear()
-        await message.answer("🗑 Rasm o'chirildi.", reply_markup=admin_menu_kb(role == "super"))
+        await message.answer("🗑 O'chirildi.", reply_markup=admin_menu_kb(role == "super"))
         return
 
-    if not message.photo:
-        await message.answer("Iltimos, rasm (photo) yuboring, yoki o'chirish uchun \"o'chir\" deb yozing.")
+    if message.video:
+        file_id, file_type = message.video.file_id, "video"
+    elif message.photo:
+        file_id, file_type = message.photo[-1].file_id, "photo"
+    else:
+        await message.answer("Iltimos, rasm yoki video yuboring, yoki o'chirish uchun \"o'chir\" deb yozing.")
         return
 
-    file_id = message.photo[-1].file_id
-    await db.set_banner(menu_key, file_id)
+    await db.set_banner(menu_key, file_id, file_type)
     await state.clear()
-    await message.answer("✅ Rasm o'rnatildi!", reply_markup=admin_menu_kb(role == "super"))
+    label = "Video" if file_type == "video" else "Rasm"
+    await message.answer(f"✅ {label} o'rnatildi!", reply_markup=admin_menu_kb(role == "super"))
+
+
+# ---------- Stikerlar (hazilli auto-javob to'plami) ----------
+
+@router.callback_query(F.data == "admin_stickers")
+async def admin_stickers_menu(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not role:
+        return await deny(callback)
+    count = await db.count_stickers()
+    await callback.message.edit_text(
+        "🎭 <b>Stikerlar</b>\n\n"
+        "Bu yerga qo'shgan stikerlaringiz botga oddiy xabar yozgan foydalanuvchilarga "
+        "tasodifiy hazil sifatida yuboriladi — butun bot bo'ylab bitta umumiy to'plam.",
+        reply_markup=stickers_menu_kb(count),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "stickers_add")
+async def admin_sticker_add_start(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not role:
+        return await deny(callback)
+    await state.set_state(AddSticker.waiting_sticker)
+    await callback.message.edit_text("Stikerni menga yuboring (Telegram stiker ko'rinishida):")
+    await callback.answer()
+
+
+@router.message(AddSticker.waiting_sticker)
+async def admin_sticker_add_received(message: Message, state: FSMContext):
+    role = await get_role(message.from_user.id)
+    if not message.sticker:
+        await message.answer("Iltimos, aynan stiker (sticker) yuboring.")
+        return
+    sticker_id = await db.add_sticker(message.sticker.file_id, message.from_user.id)
+    await state.clear()
+    count = await db.count_stickers()
+    await message.answer(
+        f"✅ Stiker qo'shildi! (ID: {sticker_id}, jami: {count} ta)",
+        reply_markup=stickers_menu_kb(count),
+    )
+
+
+@router.callback_query(F.data == "stickers_list")
+async def admin_stickers_list(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not role:
+        return await deny(callback)
+    stickers = await db.list_stickers()
+    if not stickers:
+        await callback.message.edit_text(
+            "🎭 Hozircha stiker yo'q.", reply_markup=stickers_menu_kb(0)
+        )
+    else:
+        await callback.message.edit_text(
+            f"🎭 <b>Stikerlar</b> ({len(stickers)} ta)\n\nO'chirish uchun bosing:",
+            reply_markup=stickers_list_kb(stickers),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("sticker_rm:"))
+async def admin_sticker_remove(callback: CallbackQuery):
+    role = await get_role(callback.from_user.id)
+    if not role:
+        return await deny(callback)
+    sticker_id = int(callback.data.split(":", 1)[1])
+    await db.delete_sticker(sticker_id)
+    stickers = await db.list_stickers()
+    await callback.message.edit_text(
+        f"🎭 <b>Stikerlar</b> ({len(stickers)} ta)\n\nO'chirish uchun bosing:",
+        reply_markup=stickers_list_kb(stickers) if stickers else stickers_menu_kb(0),
+    )
+    await callback.answer("O'chirildi")
 
 
 # ---------- Adminlar (faqat super) ----------

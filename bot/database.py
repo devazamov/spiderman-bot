@@ -42,7 +42,17 @@ CREATE TABLE IF NOT EXISTS channels (
 CREATE_BANNERS_SQL = """
 CREATE TABLE IF NOT EXISTS banners (
     menu_key TEXT PRIMARY KEY,
-    file_id TEXT NOT NULL
+    file_id TEXT NOT NULL,
+    file_type TEXT NOT NULL DEFAULT 'photo'
+);
+"""
+
+CREATE_STICKERS_SQL = """
+CREATE TABLE IF NOT EXISTS stickers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id TEXT NOT NULL,
+    added_by INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -54,6 +64,14 @@ async def init_db():
         await db.execute(CREATE_ADMINS_SQL)
         await db.execute(CREATE_CHANNELS_SQL)
         await db.execute(CREATE_BANNERS_SQL)
+        await db.execute(CREATE_STICKERS_SQL)
+
+        # Eski bazalarda 'banners' jadvalida file_type ustuni bo'lmasligi mumkin — migratsiya
+        cursor = await db.execute("PRAGMA table_info(banners)")
+        cols = [row[1] for row in await cursor.fetchall()]
+        if "file_type" not in cols:
+            await db.execute("ALTER TABLE banners ADD COLUMN file_type TEXT NOT NULL DEFAULT 'photo'")
+
         await db.commit()
 
 
@@ -222,26 +240,69 @@ async def list_channels():
         return [dict(r) for r in rows]
 
 
-# ---------------- Menyu rasmlari (banner) ----------------
+# ---------------- Menyu rasmlari (banner: rasm yoki video) ----------------
 
-async def set_banner(menu_key: str, file_id: str):
+async def set_banner(menu_key: str, file_id: str, file_type: str = "photo"):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO banners (menu_key, file_id) VALUES (?, ?) "
-            "ON CONFLICT(menu_key) DO UPDATE SET file_id = excluded.file_id",
-            (menu_key, file_id),
+            "INSERT INTO banners (menu_key, file_id, file_type) VALUES (?, ?, ?) "
+            "ON CONFLICT(menu_key) DO UPDATE SET file_id = excluded.file_id, file_type = excluded.file_type",
+            (menu_key, file_id, file_type),
         )
         await db.commit()
 
 
 async def get_banner(menu_key: str):
+    """{'file_id': ..., 'file_type': 'photo'|'video'} yoki None qaytaradi."""
     async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT file_id FROM banners WHERE menu_key = ?", (menu_key,))
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT file_id, file_type FROM banners WHERE menu_key = ?", (menu_key,)
+        )
         row = await cursor.fetchone()
-        return row[0] if row else None
+        return dict(row) if row else None
 
 
 async def remove_banner(menu_key: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM banners WHERE menu_key = ?", (menu_key,))
         await db.commit()
+
+
+# ---------------- Stikerlar (hazilli auto-javob uchun global to'plam) ----------------
+
+async def add_sticker(file_id: str, added_by: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT INTO stickers (file_id, added_by) VALUES (?, ?)", (file_id, added_by)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def list_stickers():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM stickers ORDER BY created_at DESC")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_random_sticker():
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT file_id FROM stickers ORDER BY RANDOM() LIMIT 1")
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def delete_sticker(sticker_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM stickers WHERE id = ?", (sticker_id,))
+        await db.commit()
+
+
+async def count_stickers() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM stickers")
+        row = await cursor.fetchone()
+        return row[0] if row else 0

@@ -22,6 +22,9 @@ async def send_menu(event, text: str, keyboard=None, menu_key: str = None):
         chat_id = event.chat.id
 
     if banner:
-        await bot.send_photo(chat_id, banner, caption=text, reply_markup=keyboard)
+        if banner["file_type"] == "video":
+            await bot.send_video(chat_id, banner["file_id"], caption=text, reply_markup=keyboard)
+        else:
+            await bot.send_photo(chat_id, banner["file_id"], caption=text, reply_markup=keyboard)
     else:
         await bot.send_message(chat_id, text, reply_markup=keyboard)
