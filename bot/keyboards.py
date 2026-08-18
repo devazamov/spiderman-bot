@@ -84,7 +84,7 @@ def admin_menu_kb(is_super: bool) -> InlineKeyboardMarkup:
 
 BANNER_MENUS = [("main", "🏠 Asosiy menyu")] + [
     (k, f"{v['emoji']} {v['title']}") for k, v in CATEGORIES.items()
-]
+] + [("webapp_bg", "🎨 Mini App orqa foni (osilib turuvchi rasm)")]
 
 
 def banner_menu_kb() -> InlineKeyboardMarkup:

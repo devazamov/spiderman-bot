@@ -43,11 +43,81 @@ async def api_content(request: web.Request):
     if category not in CATEGORIES:
         return web.json_response({"error": "invalid category"}, status=400)
     items = await db.get_content_by_category(category)
-    safe_items = [
-        {"id": i["id"], "title": i["title"], "file_type": i["file_type"], "description": i.get("description", "")}
-        for i in items
-    ]
-    return web.json_response(safe_items)
+    return web.json_response([_serialize_item(i) for i in items])
+
+
+def _serialize_item(i: dict) -> dict:
+    return {
+        "id": i["id"],
+        "title": i["title"],
+        "file_type": i["file_type"],
+        "description": i.get("description", ""),
+        "views": i.get("views", 0),
+        "has_thumb": bool(i.get("thumb_file_id")),
+    }
+
+
+async def api_search(request: web.Request):
+    q = request.query.get("q", "").strip()
+    if not q:
+        return web.json_response([])
+    items = await db.search_content(q)
+    return web.json_response([_serialize_item(i) | {"category": i["category"]} for i in items])
+
+
+async def api_top(request: web.Request):
+    items = await db.get_top_viewed(12)
+    return web.json_response([_serialize_item(i) | {"category": i["category"]} for i in items])
+
+
+async def api_view(request: web.Request):
+    content_id = int(request.match_info["id"])
+    await db.increment_views(content_id)
+    return web.json_response({"ok": True})
+
+
+async def api_favorites(request: web.Request):
+    try:
+        user_id = int(request.query.get("user_id", "0"))
+    except ValueError:
+        return web.json_response([])
+    if not user_id:
+        return web.json_response([])
+    items = await db.list_favorites(user_id)
+    return web.json_response([_serialize_item(i) | {"category": i["category"]} for i in items])
+
+
+async def api_favorite_toggle(request: web.Request):
+    try:
+        data = await request.json()
+        user_id = int(data["user_id"])
+        content_id = int(data["content_id"])
+    except (ValueError, KeyError, TypeError):
+        return web.json_response({"error": "bad request"}, status=400)
+
+    if await db.is_favorite(user_id, content_id):
+        await db.remove_favorite(user_id, content_id)
+        is_fav = False
+    else:
+        await db.add_favorite(user_id, content_id)
+        is_fav = True
+    return web.json_response({"is_favorite": is_fav})
+
+
+async def api_thumb(request: web.Request):
+    """Video/animatsiya/fayl kontentining kichik old-ko'rish rasmini proksi qiladi."""
+    content_id = int(request.match_info["id"])
+    item = await db.get_content_by_id(content_id)
+    if not item or not item.get("thumb_file_id"):
+        raise web.HTTPNotFound()
+
+    bot: Bot = request.app["bot"]
+    tg_file = await bot.get_file(item["thumb_file_id"])
+    buf = io.BytesIO()
+    await bot.download_file(tg_file.file_path, destination=buf)
+    buf.seek(0)
+    return web.Response(body=buf.read(), content_type="image/jpeg",
+                         headers={"Cache-Control": "public, max-age=600"})
 
 
 async def api_banner_image(request: web.Request):
@@ -72,6 +142,12 @@ def build_web_app(bot: Bot, dp: Dispatcher) -> web.Application:
     app["bot"] = bot
     app.router.add_get("/api/categories", api_categories)
     app.router.add_get("/api/content", api_content)
+    app.router.add_get("/api/search", api_search)
+    app.router.add_get("/api/top", api_top)
+    app.router.add_post("/api/view/{id}", api_view)
+    app.router.add_get("/api/favorites", api_favorites)
+    app.router.add_post("/api/favorite/toggle", api_favorite_toggle)
+    app.router.add_get("/api/thumb/{id}", api_thumb)
     app.router.add_get("/api/banner/{key}", api_banner_image)
 
     # Telegram shu manzilga POST qilib xabarlarni yuboradi (webhook rejimi).

@@ -123,13 +123,18 @@ async def admin_add_category_chosen(callback: CallbackQuery, state: FSMContext):
 async def admin_add_file_received(message: Message, state: FSMContext):
     file_id = None
     file_type = None
+    thumb_file_id = None
 
     if message.video:
         file_id, file_type = message.video.file_id, "video"
+        if message.video.thumbnail:
+            thumb_file_id = message.video.thumbnail.file_id
     elif message.photo:
         file_id, file_type = message.photo[-1].file_id, "photo"
     elif message.animation:
         file_id, file_type = message.animation.file_id, "animation"
+        if message.animation.thumbnail:
+            thumb_file_id = message.animation.thumbnail.file_id
     elif message.sticker:
         file_id, file_type = message.sticker.file_id, "sticker"
     elif message.voice:
@@ -138,12 +143,14 @@ async def admin_add_file_received(message: Message, state: FSMContext):
         file_id, file_type = message.audio.file_id, "audio"
     elif message.document:
         file_id, file_type = message.document.file_id, "document"
+        if message.document.thumbnail:
+            thumb_file_id = message.document.thumbnail.file_id
 
     if not file_id:
         await message.answer("Iltimos, media fayl yuboring (video/rasm/gif/stiker/audio/fayl).")
         return
 
-    await state.update_data(file_id=file_id, file_type=file_type)
+    await state.update_data(file_id=file_id, file_type=file_type, thumb_file_id=thumb_file_id)
 
     if file_type == "sticker":
         data = await state.get_data()
@@ -173,7 +180,7 @@ async def admin_add_description_received(message: Message, state: FSMContext):
 
     content_id = await db.add_content(
         category=data["category"], title=data["title"], file_id=data["file_id"],
-        file_type=data["file_type"], description=description,
+        file_type=data["file_type"], description=description, thumb_file_id=data.get("thumb_file_id"),
     )
     await state.clear()
     meta = CATEGORIES[data["category"]]

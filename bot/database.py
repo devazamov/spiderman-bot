@@ -89,6 +89,12 @@ async def init_db():
         if "name" not in cols:
             await db.execute("ALTER TABLE stickers ADD COLUMN name TEXT NOT NULL DEFAULT ''")
 
+        # Eski bazalarda 'content' jadvalida views ustuni bo'lmasligi mumkin — migratsiya
+        cursor = await db.execute("PRAGMA table_info(content)")
+        cols = [row[1] for row in await cursor.fetchall()]
+        if "views" not in cols:
+            await db.execute("ALTER TABLE content ADD COLUMN views INTEGER NOT NULL DEFAULT 0")
+
         await db.commit()
 
 
@@ -153,6 +159,35 @@ async def count_by_category():
         )
         rows = await cursor.fetchall()
         return {r["category"]: r["cnt"] for r in rows}
+
+
+async def increment_views(content_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE content SET views = views + 1 WHERE id = ?", (content_id,))
+        await db.commit()
+
+
+async def get_top_viewed(limit: int = 12):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM content WHERE views > 0 ORDER BY views DESC LIMIT ?", (limit,)
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def search_content(query: str, limit: int = 30):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        like = f"%{query}%"
+        cursor = await db.execute(
+            "SELECT * FROM content WHERE title LIKE ? OR description LIKE ? "
+            "ORDER BY views DESC, created_at DESC LIMIT ?",
+            (like, like, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
 
 async def upsert_user(user_id: int, username: str):
