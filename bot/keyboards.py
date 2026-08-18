@@ -28,6 +28,8 @@ def main_menu_kb() -> InlineKeyboardMarkup:
             )
         ])
 
+    rows.append([InlineKeyboardButton(text="⭐ Sevimlilar", callback_data="favorites")])
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -54,6 +56,13 @@ def back_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="◀️ Bosh menyu", callback_data="back_main")]]
     )
+
+
+def content_actions_kb(content_id: int, is_fav: bool) -> InlineKeyboardMarkup:
+    text = "💔 Sevimlilardan olib tashlash" if is_fav else "⭐ Sevimlilarga qo'shish"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text, callback_data=f"favtoggle:{content_id}")]
+    ])
 
 
 def admin_menu_kb(is_super: bool) -> InlineKeyboardMarkup:
@@ -93,10 +102,10 @@ def stickers_menu_kb(count: int) -> InlineKeyboardMarkup:
 
 
 def stickers_list_kb(stickers: list) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text=f"❌ #{s['id']}", callback_data=f"sticker_rm:{s['id']}")]
-        for s in stickers[:40]
-    ]
+    rows = []
+    for s in stickers[:40]:
+        label = f"❌ {s['name']}" if s.get("name") else f"❌ #{s['id']}"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"sticker_rm:{s['id']}")])
     rows.append([InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin_stickers")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

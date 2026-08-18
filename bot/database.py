@@ -51,8 +51,18 @@ CREATE_STICKERS_SQL = """
 CREATE TABLE IF NOT EXISTS stickers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
     added_by INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+CREATE_FAVORITES_SQL = """
+CREATE TABLE IF NOT EXISTS favorites (
+    user_id INTEGER NOT NULL,
+    content_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, content_id)
 );
 """
 
@@ -65,12 +75,19 @@ async def init_db():
         await db.execute(CREATE_CHANNELS_SQL)
         await db.execute(CREATE_BANNERS_SQL)
         await db.execute(CREATE_STICKERS_SQL)
+        await db.execute(CREATE_FAVORITES_SQL)
 
         # Eski bazalarda 'banners' jadvalida file_type ustuni bo'lmasligi mumkin — migratsiya
         cursor = await db.execute("PRAGMA table_info(banners)")
         cols = [row[1] for row in await cursor.fetchall()]
         if "file_type" not in cols:
             await db.execute("ALTER TABLE banners ADD COLUMN file_type TEXT NOT NULL DEFAULT 'photo'")
+
+        # Eski bazalarda 'stickers' jadvalida name ustuni bo'lmasligi mumkin — migratsiya
+        cursor = await db.execute("PRAGMA table_info(stickers)")
+        cols = [row[1] for row in await cursor.fetchall()]
+        if "name" not in cols:
+            await db.execute("ALTER TABLE stickers ADD COLUMN name TEXT NOT NULL DEFAULT ''")
 
         await db.commit()
 
@@ -269,12 +286,13 @@ async def remove_banner(menu_key: str):
         await db.commit()
 
 
-# ---------------- Stikerlar (hazilli auto-javob uchun global to'plam) ----------------
+# ---------------- Stikerlar (nomlangan, butun bot bo'ylab ishlatiladi) ----------------
 
-async def add_sticker(file_id: str, added_by: int) -> int:
+async def add_sticker(file_id: str, added_by: int, name: str = "") -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO stickers (file_id, added_by) VALUES (?, ?)", (file_id, added_by)
+            "INSERT INTO stickers (file_id, added_by, name) VALUES (?, ?, ?)",
+            (file_id, added_by, name),
         )
         await db.commit()
         return cursor.lastrowid
@@ -306,3 +324,44 @@ async def count_stickers() -> int:
         cursor = await db.execute("SELECT COUNT(*) FROM stickers")
         row = await cursor.fetchone()
         return row[0] if row else 0
+
+
+# ---------------- Sevimlilar ----------------
+
+async def add_favorite(user_id: int, content_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO favorites (user_id, content_id) VALUES (?, ?)",
+            (user_id, content_id),
+        )
+        await db.commit()
+
+
+async def remove_favorite(user_id: int, content_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM favorites WHERE user_id = ? AND content_id = ?", (user_id, content_id)
+        )
+        await db.commit()
+
+
+async def is_favorite(user_id: int, content_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM favorites WHERE user_id = ? AND content_id = ?", (user_id, content_id)
+        )
+        return (await cursor.fetchone()) is not None
+
+
+async def list_favorites(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT content.* FROM favorites "
+            "JOIN content ON content.id = favorites.content_id "
+            "WHERE favorites.user_id = ? "
+            "ORDER BY favorites.created_at DESC",
+            (user_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

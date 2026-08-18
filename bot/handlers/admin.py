@@ -53,6 +53,7 @@ class SetBanner(StatesGroup):
 
 class AddSticker(StatesGroup):
     waiting_sticker = State()
+    waiting_name = State()
 
 
 class AddAdminFSM(StatesGroup):
@@ -381,8 +382,9 @@ async def admin_stickers_menu(callback: CallbackQuery):
     count = await db.count_stickers()
     await callback.message.edit_text(
         "🎭 <b>Stikerlar</b>\n\n"
-        "Bu yerga qo'shgan stikerlaringiz botga oddiy xabar yozgan foydalanuvchilarga "
-        "tasodifiy hazil sifatida yuboriladi — butun bot bo'ylab bitta umumiy to'plam.",
+        "Bu yerga qo'shgan stikerlaringiz botning turli joylarida "
+        "(bosh menyu, bo'limlarga kirganda, tushunarsiz xabarlarga javoban) "
+        "tasodifiy tarzda chiqib turadi — butun bot bo'ylab bitta umumiy to'plam.",
         reply_markup=stickers_menu_kb(count),
     )
     await callback.answer()
@@ -400,15 +402,28 @@ async def admin_sticker_add_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AddSticker.waiting_sticker)
 async def admin_sticker_add_received(message: Message, state: FSMContext):
-    role = await get_role(message.from_user.id)
     if not message.sticker:
         await message.answer("Iltimos, aynan stiker (sticker) yuboring.")
         return
-    sticker_id = await db.add_sticker(message.sticker.file_id, message.from_user.id)
+    await state.update_data(file_id=message.sticker.file_id)
+    await state.set_state(AddSticker.waiting_name)
+    await message.answer(
+        "Endi shu stiker uchun qisqa nom yozing (masalan: <i>kulgili</i>, <i>salom</i>, <i>tabriklov</i>).\n"
+        "Bu nom faqat siz — adminlar uchun, ro'yxatda ko'rinadi."
+    )
+
+
+@router.message(AddSticker.waiting_name)
+async def admin_sticker_name_received(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Iltimos, nom uchun matn yuboring.")
+        return
+    data = await state.get_data()
+    sticker_id = await db.add_sticker(data["file_id"], message.from_user.id, message.text.strip())
     await state.clear()
     count = await db.count_stickers()
     await message.answer(
-        f"✅ Stiker qo'shildi! (ID: {sticker_id}, jami: {count} ta)",
+        f"✅ Stiker qo'shildi! (\"{message.text.strip()}\", jami: {count} ta)",
         reply_markup=stickers_menu_kb(count),
     )
 
