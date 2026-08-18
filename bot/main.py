@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -159,6 +160,24 @@ def build_web_app(bot: Bot, dp: Dispatcher) -> web.Application:
     return app
 
 
+async def setup_bot_profile(bot: Bot):
+    """Bot buyruqlari va tavsif matnlarini avtomatik o'rnatadi
+    (BotFather'ga qo'lda kirmasdan — Bot API orqali)."""
+    await bot.set_my_commands([
+        BotCommand(command="start", description="🕸 Botni ishga tushirish / bosh menyu"),
+        BotCommand(command="admin", description="🛠 Admin panel (faqat adminlar uchun)"),
+    ])
+    await bot.set_my_description(
+        "🕸 Spider-Man olamiga bag'ishlangan bot!\n\n"
+        "Filmlar, seriallar, multfilmlar, stikerlar, emojilar va videolarni shu yerdan toping. "
+        "Sevimlilaringizni saqlang, qidiruv orqali izlang va Mini App'da chiroyli interfeysda ko'ring 🕷"
+    )
+    await bot.set_my_short_description(
+        "Spider-Man filmlari, seriallari, stikerlari va videolari — bittasida 🕸"
+    )
+    log.info("Bot buyruqlari va tavsiflari o'rnatildi ✅")
+
+
 async def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN sozlanmagan! .env faylini tekshiring.")
@@ -168,6 +187,8 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
+
+    await setup_bot_profile(bot)
 
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
