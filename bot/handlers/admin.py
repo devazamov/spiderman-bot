@@ -1,5 +1,8 @@
 import asyncio
+import io
+import json
 import logging
+import aiohttp
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -7,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 
 from bot import database as db
-from bot.config import CATEGORIES
+from bot.config import CATEGORIES, BOT_TOKEN
 from bot.keyboards import (
     admin_menu_kb, admin_category_kb, banner_menu_kb,
     admins_list_kb, role_choice_kb, channels_list_kb,
@@ -54,6 +57,10 @@ class SetBanner(StatesGroup):
 class AddSticker(StatesGroup):
     waiting_sticker = State()
     waiting_name = State()
+
+
+class SetBotPic(StatesGroup):
+    waiting_photo = State()
 
 
 class AddAdminFSM(StatesGroup):
@@ -620,3 +627,58 @@ async def admin_broadcast_send(message: Message, state: FSMContext):
     await status.edit_text(
         f"✅ Yuborildi: {sent} ta\n❌ Xatolik: {failed} ta", reply_markup=admin_menu_kb(role == "super")
     )
+
+
+# ---------- Bot rasmi (profil) — BotFather'ga kirmasdan, yangi Bot API orqali ----------
+
+async def _set_telegram_profile_photo(photo_bytes: bytes) -> tuple[bool, str]:
+    """Telegram'ning yangi setMyProfilePhoto metodini chaqiradi.
+    aiogram 3.13.1'da hali tayyor wrapper yo'q, shu sabab xom HTTP so'rov yuboramiz."""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setMyProfilePhoto"
+    form = aiohttp.FormData()
+    form.add_field(
+        "photo",
+        json.dumps({"type": "static", "photo": "attach://photo_file"}),
+        content_type="application/json",
+    )
+    form.add_field("photo_file", photo_bytes, filename="botpic.jpg", content_type="image/jpeg")
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=form) as resp:
+            data = await resp.json()
+    return bool(data.get("ok")), data.get("description", "")
+
+
+@router.callback_query(F.data == "admin_botpic")
+async def admin_botpic_menu(callback: CallbackQuery, state: FSMContext):
+    role = await get_role(callback.from_user.id)
+    if not role:
+        return await deny(callback)
+    await state.set_state(SetBotPic.waiting_photo)
+    await callback.message.edit_text(
+        "🤖 Botning profil rasmini yangilash uchun kvadrat (yaxshisi 640x640) rasm yuboring.\n\n"
+        "⚠️ Diqqat: bu bot ochgan har bir chatda darhol o'zgaradi, orqaga qaytarib bo'lmaydi "
+        "(faqat yangi rasm bilan almashtirish mumkin)."
+    )
+    await callback.answer()
+
+
+@router.message(SetBotPic.waiting_photo)
+async def admin_botpic_received(message: Message, state: FSMContext):
+    role = await get_role(message.from_user.id)
+    if not message.photo:
+        await message.answer("Iltimos, rasm (photo) yuboring.")
+        return
+
+    await state.clear()
+    wait_msg = await message.answer("⏳ Yuklanmoqda...")
+
+    buf = io.BytesIO()
+    await message.bot.download(message.photo[-1].file_id, destination=buf)
+    ok, description = await _set_telegram_profile_photo(buf.getvalue())
+
+    if ok:
+        await wait_msg.edit_text("✅ Bot rasmi muvaffaqiyatli yangilandi!")
+    else:
+        await wait_msg.edit_text(f"❌ Xatolik: {description or 'nomaʼlum xato'}")
+
+    await message.answer("Admin panel:", reply_markup=admin_menu_kb(role == "super"))

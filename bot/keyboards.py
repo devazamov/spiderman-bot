@@ -74,6 +74,7 @@ def admin_menu_kb(is_super: bool) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")],
         [InlineKeyboardButton(text="🖼 Menyu rasmlari", callback_data="admin_banners")],
         [InlineKeyboardButton(text="🎭 Stikerlar", callback_data="admin_stickers")],
+        [InlineKeyboardButton(text="🤖 Bot rasmi (profil)", callback_data="admin_botpic")],
     ]
     if is_super:
         rows.append([InlineKeyboardButton(text="📣 Xabar yuborish (barchaga)", callback_data="admin_broadcast")])

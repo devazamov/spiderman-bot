@@ -4,6 +4,7 @@ import io
 import logging
 import os
 
+import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -178,6 +179,23 @@ async def setup_bot_profile(bot: Bot):
     log.info("Bot buyruqlari va tavsiflari o'rnatildi ✅")
 
 
+async def keep_alive_pinger():
+    """Render bepul tarifida servis 15 daqiqa faoliyatsizlikdan keyin
+    'uxlab qoladi'. Buni oldini olish uchun bot o'zining ochiq URL'iga
+    har 10 daqiqada bir marta so'rov yuborib, doim 'uyg'oq' turadi."""
+    if not WEBAPP_URL:
+        return
+    await asyncio.sleep(30)  # server to'liq ishga tushguncha kutamiz
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(WEBAPP_URL, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    log.info(f"🔁 Keep-alive ping: {resp.status}")
+            except Exception as e:
+                log.warning(f"Keep-alive ping xatosi: {e}")
+            await asyncio.sleep(600)  # 10 daqiqada bir
+
+
 async def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN sozlanmagan! .env faylini tekshiring.")
@@ -214,6 +232,9 @@ async def main():
         log.info("Bot webhook rejimida ishlamoqda 🕸 (Render uxlab qolsa, keyingi xabar uni uyg'otadi)")
     else:
         log.warning("WEBAPP_URL sozlanmagan — webhook o'rnatib bo'lmadi, bot xabar qabul qilmaydi!")
+
+    asyncio.create_task(keep_alive_pinger())
+    log.info("🔁 Keep-alive pinger ishga tushdi — bot endi uxlamaydi")
 
     # Jarayonni tirik ushlab turish (aiohttp server fon rejimida ishlayveradi)
     await asyncio.Event().wait()
